@@ -1,0 +1,567 @@
+# Deze code is oorspronkelijk gemaakt door Little-Chef.
+## https://github.com/little-chef/intergas-xtreme-monitor
+### Ik heb de datapunten waar nodig aangepast van Xtreme naar een HRE.
+
+## voor de vermogens berekening wordt het toerental van de fan gebruikt, voor de intergas is deze linear.
+## vermogen CV is bij mij parameter h : 65% bij 4850 RPM
+
+
+substitutions:
+  devicename: "i-gas"
+  friendly_devicename: i-Gas
+  device_description: "Intergas HRE tool"
+
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: 60TQw8U7TyEhCQDg8N0w/VXjb1GnE5pDnFJbmZhVVl8=
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  manual_ip:
+    static_ip: 192.168.1.226
+    gateway: 192.168.1.254
+    subnet: 255.255.255.0
+
+  ap:
+    ssid: "Intergas-Igas Fallback Hotspot"
+    password: !secret igas_ap
+
+
+
+captive_portal:
+
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+ 
+ # Enable fallback hotspot (captive portal) in case wifi connection fails
+
+    
+ota:
+  safe_mode: True
+  password: !secret igas_ota
+  on_begin:
+    then:
+      - logger.log: "OTA start"
+      - lambda: |-
+          static_cast<Intergas*>(id(i_gas))->stop_polling();
+
+output:
+  - platform: ledc
+    id: onboard_led
+    pin:
+      number: GPIO2
+
+uart:
+  - id: uart_2
+    rx_pin: GPIO16
+    tx_pin: GPIO17
+    baud_rate: 9600
+
+logger:
+  hardware_uart: UART0
+  level: debug
+  baud_rate : 115200
+
+web_server:
+  port: 80
+
+esphome:
+  name: ${devicename}
+  includes:
+    - intergas.h
+  name_add_mac_suffix: True
+  
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+
+switch:
+  - platform: restart
+    name: ${devicename} restart
+
+binary_sensor:
+  - platform: template
+    name: ${devicename} CV Pomp
+    id: heater_pump_running
+    icon: "mdi:pump"
+    device_class: running
+
+  - platform: template
+    name: ${devicename} Heater Open-Therm
+    id: heater_open_therm
+    icon: "mdi:current-ac"
+    device_class: connectivity
+
+  - platform: template
+    name: ${devicename} GP Switch
+    id: heater_gp_switch
+    icon: "mdi:switch"
+
+  - platform: template
+    name: ${devicename} Tap Switch
+    id: heater_tap_switch
+    icon: "mdi:switch"
+    device_class: opening
+
+  - platform: template
+    name: ${devicename} Thermostaat
+    id: heater_roomtherm
+    icon: "mdi:switch"
+    device_class: connectivity
+
+  - platform: template
+    name: ${devicename} Alarm status
+    id: heater_alarm_status
+    icon: "mdi:alarm-light"
+    device_class: problem
+
+  - platform: template
+    name: ${devicename} Cascade Relay
+    id: heater_cascade_relay
+    icon: "mdi:switch"
+    device_class: connectivity
+
+  - platform: template
+    name: ${devicename} Gas klep
+    id: heater_gas_valve
+    icon: "mdi:valve"
+    device_class: opening
+
+  - platform: template
+    name: ${devicename} Ontsteking
+    id: heater_spark
+    icon: "mdi:lightning-bolt"
+
+  - platform: template
+    name: ${devicename} Ionisatie
+    id: heater_ionisation_signal
+    icon: "mdi:lightning-bolt"
+
+  - platform: template
+    name: ${devicename} OpenTherm
+    id: heater_ot_disabled
+    icon: "mdi:switch"
+
+  - platform: template
+    name: ${devicename}  Lage cv druk
+    id: heater_has_low_water_pressure
+    icon: "mdi:gauge"
+
+  - platform: template
+    name: ${devicename} Brander
+    id: heater_burner_block
+    icon: "mdi:fire"
+
+  - platform: template
+    name: ${devicename} Gradient flag
+    id: heater_gradient_flag
+    icon: "mdi:switch"
+
+sensor:
+
+  - platform: template
+    name: ${devicename} Max aanvoer
+    id: ch_set_max
+    unit_of_measurement: °C
+
+  - platform: template
+    name: ${devicename} Aantal uur spanning
+    id: line_power_connected_hours
+    icon: "mdi:counter"
+    unit_of_measurement: Hours
+    accuracy_decimals: 0
+
+  - platform: template
+    name: ${devicename} Aantal maal spanning
+    id: line_power_connected_count
+    icon: "mdi:counter"
+    unit_of_measurement: Keer
+    accuracy_decimals: 0
+
+  - platform: template
+    name: ${devicename} Branduren CV
+    id: ch_function_hours
+    icon: "mdi:clock-start"
+    unit_of_measurement: Hours
+    accuracy_decimals: 0
+
+
+  - platform: template
+    name: ${devicename} Setpoint vermogen
+    id: param_H
+    accuracy_decimals: 0
+    unit_of_measurement: "%"
+
+##dit is param H, waarde is max % van vermogen.
+## bij mij 65, dus max 65% van 40.9 KW
+  - platform: template
+    name: ${devicename} max vermogen
+    id: vermogen
+    accuracy_decimals: 1
+    unit_of_measurement: "kW"
+    lambda: |- 
+      return (40.9 / 99) * id(param_H).state;
+
+  
+  - platform: template
+    name: ${devicename} Branduren Tapwater
+    id: dhw_function_hours
+    icon: "mdi:clock-start"
+    unit_of_measurement: Hours
+    accuracy_decimals: 0
+
+  - platform: template
+    name: ${devicename} Brander starts
+    id: burner_start_count
+    icon: "mdi:counter"
+    unit_of_measurement: Starts
+    accuracy_decimals: 0
+
+  - platform: template
+    name: ${devicename} Mislukte ontsteekpogingen
+    id: ignition_failed
+    icon: "mdi:counter"
+    unit_of_measurement: Keer
+    accuracy_decimals: 0
+
+  - platform: template
+    name: ${devicename} Vlamwegval
+    id: flame_lost
+    icon: "mdi:counter"
+    unit_of_measurement: Keer
+    accuracy_decimals: 0
+
+  - platform: template
+    name: ${devicename} Aantal Resets
+    id: reset_count
+    icon: "mdi:counter"
+    unit_of_measurement: Resets
+    accuracy_decimals: 0
+
+  - platform: template
+    name: ${devicename} Gasverbruik CV
+    id: gas_meter_ch
+    icon: "mdi:meter-gas"
+    unit_of_measurement: m3
+    accuracy_decimals: 1
+
+  - platform: template
+    name: ${devicename} Gasverbruik Tapwater
+    id: gas_meter_dhw
+    icon: "mdi:meter-gas"
+    unit_of_measurement: m3
+    accuracy_decimals: 1
+
+  - platform: template
+    name: ${devicename} Liters warm water
+    id: water_meter
+    icon: "mdi:gauge"
+    unit_of_measurement: m3
+    accuracy_decimals: 1
+
+  - platform: template
+    name: ${devicename} Branderstarts Tapwater
+    id: burner_starts_dhw_count
+    icon: "mdi:counter"
+    unit_of_measurement: Starts
+    accuracy_decimals: 0
+
+
+### vermogensberekening
+
+  - platform: template
+    name: ${devicename} Vermogen cv actueel
+    id: fanspeed
+    icon: "mdi:fan"
+    unit_of_measurement: kW
+    internal: true
+    accuracy_decimals: 1
+    filters: 
+      -  calibrate_linear:
+          - 0 -> 0.0
+          - 2000 -> 7.8
+          - 6500 -> 26.9
+
+## vermogen voor tapwater
+  - platform: template
+    name: ${devicename} Vermogen tapwater actueel
+    id: vermogentapwater
+    icon: "mdi:fan"
+    unit_of_measurement: kW
+    internal: true
+    accuracy_decimals: 1
+    filters: 
+      -  calibrate_linear:
+          - 0 -> 0.0
+          - 2000 -> 7.8
+          - 4875 -> 31
+## templatesensor voor actueel vermogen,
+  - platform: template
+    name: "vermogen actueel"
+    lambda: |-
+      if (id(heater_tap_switch).state) {
+        return id(vermogentapwater).state;
+      } else if (id(heater_roomtherm).state) {
+        return id(fanspeed).state;
+      } else {
+        return 0.0;
+      }
+    update_interval: 5s
+    unit_of_measurement: kW
+
+  - platform: template
+    name: ${devicename} Ventilator Setpoint
+    id: fanspeed_set
+    icon: "mdi:fan"
+    unit_of_measurement: RPM
+    accuracy_decimals: 0
+
+  - platform: template
+    name: ${devicename} Ventilator speed
+    id: ventilatorsnelheid
+    icon: "mdi:fan"
+    unit_of_measurement: RPM
+    accuracy_decimals: 0
+
+
+  - platform: template
+    name: ${devicename} Pomp aansturing
+    id: pumpspeed
+    icon: "mdi:pump"
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+
+#  - platform: template
+#    name: Pomp snelheid
+#    id: pumpspeed_set
+#    icon: "mdi:pump"
+#    unit_of_measurement: RPM
+#    accuracy_decimals: 0
+
+  - platform: template
+    name: ${devicename} Tap flow
+    id: tapflow
+    icon: "mdi:water-pump"
+    unit_of_measurement: 'l/m'
+    accuracy_decimals: 1
+
+  - platform: template
+    name: ${devicename} Ionisatie
+    id: heater_io_current
+    icon: "mdi:current-dc"
+    accuracy_decimals: 1
+    unit_of_measurement: µA
+
+  - platform: template
+    name: ${devicename} Waterdruk
+    id: pressure
+    icon: "mdi:gauge-full"
+    unit_of_measurement: BAR
+    accuracy_decimals: 2
+
+  - platform: template
+    name: ${devicename} Temperatuur wisselaar(S1)
+    id: temperature_t1
+    unit_of_measurement: °C
+    accuracy_decimals: 1
+    device_class: temperature
+
+#  - platform: template
+#    name: Heat Exchanger 2 Temperature
+#    id: temperature_heat_exchanger_2
+#    unit_of_measurement: °C
+#    accuracy_decimals: 2
+#    device_class: temperature
+
+  - platform: template
+    name: ${devicename} Aanvoer temperatuur(S1)
+    id: temperature_t2
+    unit_of_measurement: °C
+    accuracy_decimals: 2
+    device_class: temperature
+
+#  - platform: template
+#    name: Buitentemperatuur (S6)
+#    id: temperature_outside
+#    unit_of_measurement: °C
+#    accuracy_decimals: 2
+#    device_class: temperature
+
+#  - platform: template
+#    name: Return Temperature
+#    id: temperature_return
+#    unit_of_measurement: °C
+#    accuracy_decimals: 2
+#    device_class: temperature
+
+  - platform: template
+    name: ${devicename} Tapwater temperatuur(S3)
+    id: temperature_hot_water
+    unit_of_measurement: °C
+    accuracy_decimals: 2
+    device_class: temperature
+
+#  - platform: template
+#    name: Flue gas Temperature (S5)
+#    id: temperature_flue_gas
+#    unit_of_measurement: °C
+#    accuracy_decimals: 2
+#    device_class: temperature
+
+#  - platform: template
+#    name: Solar Boiler Outflow temperature
+#    id: temperature_boiler_to_heater
+#    unit_of_measurement: °C
+#    accuracy_decimals: 2
+#    device_class: temperature
+
+  - platform: template
+    name: ${devicename} Setpoint
+    id: temperature_setpoint
+    unit_of_measurement: °C
+    accuracy_decimals: 2
+    device_class: temperature
+
+
+#  - platform: template
+#    name: Zone 1 room override
+#    id: zone1_room_override
+#    unit_of_measurement: °C
+#    accuracy_decimals: 2
+#    device_class: temperature
+
+#  - platform: template
+#    name: Zone 1 room setpoint
+#    id: zone1_room_setpoint
+#    unit_of_measurement: °C
+#    accuracy_decimals: 2
+#    device_class: temperature
+
+#  - platform: template
+#    name: Zone 1 room Temperature
+#    id: zone1_room_temperature
+#    unit_of_measurement: °C
+#    accuracy_decimals: 2
+#    device_class: temperature
+
+#  - platform: template
+#    name: Zone 2 room override
+#    id: zone2_room_override
+#    unit_of_measurement: °C
+#    accuracy_decimals: 2
+#    device_class: temperature
+
+#  - platform: template
+#    name: Zone 2 room setpoint
+#    id: zone2_room_setpoint
+#    unit_of_measurement: °C
+#    accuracy_decimals: 2
+#    device_class: temperature
+
+#  - platform: template
+#    name: Zone 2 room Temperature
+#    id: zone2_room_temperature
+#    unit_of_measurement: °C
+#    accuracy_decimals: 2
+#    device_class: temperature
+
+#  - platform: template
+#    name: Outside override Temperature
+#    id: override_outside_temp
+#    unit_of_measurement: °C
+#    accuracy_decimals: 2
+#    device_class: temperature
+
+  - platform: uptime
+    name: ${devicename} Uptime Sensor
+    id: uptime_sensor
+    update_interval: 60s
+    icon: mdi:clock-start
+
+  - platform: wifi_signal
+    name: "${devicename} WiFi Signal"
+    update_interval: 60s
+
+text_sensor:
+  - platform: template
+    name: ${devicename} LT/HT Zone valve
+    id: heater_dwk
+    icon: "mdi:valve"
+
+  - platform: template
+    name: ${devicename} Status code
+    id: heater_status_code
+    icon: "mdi:text-box"
+
+  - platform: template
+    name: ${devicename} Storingscode
+    id: heater_fault_code
+    icon: "mdi:text-box"
+
+  - platform: template
+    name: ${devicename} Laatste storingscode
+    id: heater_last_fault_code
+    icon: "mdi:text-box"
+
+  - platform: template
+    name: ${devicename} Heater Hardware release
+    id: hardware_release
+    icon: "mdi:text-box"
+
+  - platform: template
+    name: ${devicename} Heater Software release
+    id: software_release
+    icon: "mdi:text-box"
+
+
+
+#  - platform: template
+#    name: Heater ROM 1 Checksum
+#    id: rom_test_1_checksum
+#    icon: "mdi:text-box"
+
+#  - platform: template
+#    name: Heater ROM 2 Checksum
+#    id: rom_test_2_checksum
+#    icon: "mdi:text-box"
+
+#  - platform: template
+#    name: Heater DSP Hardware release
+#    id: dsp_hardware_release
+#    icon: "mdi:text-box"
+
+#  - platform: template
+#    name: Heater DSP Software release
+#    id: dsp_software_release
+#    icon: "mdi:text-box"
+
+#  - platform: template
+#    name: Heater DSP ROM 1 Checksum
+#    id: dsp_rom_test_1_checksum
+#    icon: "mdi:text-box"
+
+#  - platform: template
+#    name: Heater DSP ROM 2 Checksum
+#    id: dsp_rom_test_2_checksum
+#    icon: "mdi:text-box"
+
+  - platform: template
+    name: ${devicename} Status
+    id: monitor_status
+    icon: "mdi:text-box"
+
+  - platform: wifi_info
+    ip_address:
+      name: ${devicename} IP Address
+
+custom_component:
+  - lambda: |-
+      return {new Intergas()};
+    components:
+      - id: i_gas

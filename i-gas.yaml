@@ -15,7 +15,7 @@ substitutions:
 # Enable Home Assistant API
 api:
   encryption:
-    key: 60TQw8U7TyEhCQDg8N0w/VXjb1GnE5pDnFJbmZhVVl8=
+    key: ********************************
 
 wifi:
   ssid: !secret wifi_ssid
